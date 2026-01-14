@@ -3,16 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "prebuild": "prisma generate",
     "build": "next build",
-    "start": "next start",
-    "postinstall": "prisma generate",
+    "start": "npm run db:migrate:deploy && npm run db:seed && next start",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
-  }
-  ,
+  },
   "dependencies": {
     "@prisma/client": "^6.19.1",
     "bcryptjs": "^3.0.3",
