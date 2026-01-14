@@ -1,26 +1,277 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* =========================================================
+   DARK ROCK N ROLL (RGB triplet)
+   - Preto profundo + vermelho sangue (acentos)
+   - Glass no topnav + sombras fortes
+   - SEM auto light/dark: fica dark sempre
+   ========================================================= */
+:root{
+  /* Base */
+  --background: 6 7 10;              /* preto profundo */
+  --foreground: 236 238 241;         /* quase branco */
+
+  /* Surfaces */
+  --card: 12 13 18;                  /* preto com leve azul/acinzentado */
+  --card-foreground: 236 238 241;
+
+  --muted: 18 20 28;                 /* superfície secundária */
+  --muted-foreground: 150 155 165;   /* cinza “metal” */
+
+  --surface-2: 22 24 34;             /* hover */
+
+  /* Borders */
+  --border: 36 38 48;                /* metal escuro */
+
+  /* Brand */
+  --primary: 225 29 72;              /* vermelho (rock) */
+  --primary-foreground: 255 255 255;
+
+  /* Accent (detalhes) */
+  --accent: 251 113 133;             /* rose mais claro (hover/badges) */
+  --accent-foreground: 6 7 10;
+
+  /* Focus */
+  --ring: 244 63 94;                 /* rose-500 */
+
+  /* Radius & Shadows */
+  --radius: 14px;
+  --radius-lg: 18px;
+
+  --shadow: 0 18px 50px rgb(0 0 0 / 0.55);
+  --shadow-lg: 0 30px 90px rgb(0 0 0 / 0.70);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+/* =========================================================
+   BASE
+   ========================================================= */
+@layer base{
+  html, body{ height: 100%; }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  body{
+    /* textura rock: vinheta + glow vermelho discreto */
+    background:
+      radial-gradient(900px 420px at 12% 0%, rgb(var(--primary) / 0.10), transparent 55%),
+      radial-gradient(700px 380px at 85% 8%, rgb(255 255 255 / 0.04), transparent 60%),
+      radial-gradient(1200px 800px at 50% 100%, rgb(0 0 0 / 0.75), transparent 55%),
+      rgb(var(--background));
+    color: rgb(var(--foreground));
+    font-family: var(--font-geist-sans), system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  }
+
+  /* “metal” suave em tudo que é border padrão */
+  *{
+    border-color: rgb(var(--border));
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* =========================================================
+   UTILITIES (tokens -> classes)
+   ========================================================= */
+@layer utilities{
+  .bg-background{ background-color: rgb(var(--background)); }
+  .text-foreground{ color: rgb(var(--foreground)); }
+
+  .bg-card{ background-color: rgb(var(--card)); }
+  .text-card-foreground{ color: rgb(var(--card-foreground)); }
+
+  .bg-muted{ background-color: rgb(var(--muted)); }
+  .text-muted-foreground{ color: rgb(var(--muted-foreground)); }
+
+  .border-border{ border-color: rgb(var(--border)); }
+
+  .bg-primary{ background-color: rgb(var(--primary)); }
+  .text-primary-foreground{ color: rgb(var(--primary-foreground)); }
+
+  .bg-accent{ background-color: rgb(var(--accent)); }
+  .text-accent-foreground{ color: rgb(var(--accent-foreground)); }
+
+  /* overlay mais “show” */
+  .modal-overlay{
+    background: linear-gradient(
+      to bottom,
+      rgb(0 0 0 / 0.55),
+      rgb(0 0 0 / 0.70)
+    );
+    backdrop-filter: blur(10px);
+  }
+
+  /* borda hairline estilo metal */
+  .hairline{
+    border: 1px solid rgb(var(--border) / 0.9);
+  }
+}
+
+/* =========================================================
+   LAYOUT HELPERS
+   ========================================================= */
+.container-app{
+  width: min(1100px, calc(100% - 32px));
+  margin: 0 auto;
+}
+.main{ padding: 18px 0 32px; }
+
+/* =========================================================
+   COMPONENT HELPERS (premium dark)
+   ========================================================= */
+
+/* Card com highlight vermelho discreto */
+.card{
+  background: rgb(var(--card));
+  color: rgb(var(--card-foreground));
+  border: 1px solid rgb(var(--border));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  position: relative;
+  overflow: hidden;
+}
+.card::before{
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 220px at 18% 0%, rgb(var(--primary) / 0.12), transparent 55%),
+    radial-gradient(700px 240px at 82% 12%, rgb(255 255 255 / 0.05), transparent 60%);
+}
+
+/* Botões */
+.btn{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+
+  padding: 10px 14px;
+  border-radius: 12px;
+
+  border: 1px solid rgb(var(--border));
+  background: rgb(var(--card));
+  color: rgb(var(--foreground));
+
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    opacity 120ms ease;
+}
+.btn:hover{
+  background: rgb(var(--surface-2));
+  box-shadow: 0 14px 30px rgb(0 0 0 / 0.45);
+  border-color: rgb(var(--border) / 0.85);
+}
+.btn:active{ transform: translateY(1px); }
+.btn:focus-visible{
+  outline: none;
+  border-color: rgb(var(--ring));
+  box-shadow: 0 0 0 4px rgb(var(--ring) / 0.22);
+}
+
+/* Primary rock: gradiente + glow vermelho */
+.btn-primary{
+  background: linear-gradient(
+    180deg,
+    rgb(var(--primary)),
+    rgb(var(--primary) / 0.82)
+  );
+  border-color: rgb(var(--primary) / 0.45);
+  color: rgb(var(--primary-foreground));
+}
+.btn-primary:hover{
+  box-shadow:
+    0 18px 40px rgb(var(--primary) / 0.18),
+    0 12px 30px rgb(0 0 0 / 0.55);
+  filter: brightness(1.04);
+}
+
+/* Inputs */
+.input{
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+
+  border: 1px solid rgb(var(--border));
+  background: rgb(var(--card));
+  color: rgb(var(--foreground));
+
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+.input:hover{ background: rgb(var(--surface-2)); }
+.input:focus{
+  border-color: rgb(var(--ring));
+  box-shadow: 0 0 0 4px rgb(var(--ring) / 0.18);
+}
+
+/* TopNav glass dark */
+.topnav{
+  position: sticky;
+  top: 0;
+  z-index: 50;
+
+  background: rgb(var(--card) / 0.72);
+  backdrop-filter: blur(16px);
+
+  border-bottom: 1px solid rgb(var(--border));
+}
+.topnav::after{
+  /* “linha” vermelha sutil em baixo (rock vibe) */
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(var(--primary) / 0.55),
+    transparent
+  );
+}
+.topnav-inner{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+}
+.brand{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+/* Links */
+.navlinks{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.navlink{
+  padding: 8px 10px;
+  border-radius: 10px;
+  color: rgb(var(--muted-foreground));
+  border: 1px solid transparent;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+.navlink:hover{
+  background: rgb(var(--muted));
+  color: rgb(var(--foreground));
+}
+.navlink-active{
+  background: rgb(var(--muted));
+  color: rgb(var(--foreground));
+  border-color: rgb(var(--border));
+}
+
+/* Pequeno upgrade visual em tabelas */
+table thead{
+  color: rgb(var(--muted-foreground));
+}
+tbody tr:hover{
+  background: rgb(var(--muted) / 0.55);
 }

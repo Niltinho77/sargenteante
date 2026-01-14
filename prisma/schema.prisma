@@ -1,0 +1,291 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  OPERADOR
+  CONSULTA
+}
+
+enum DayType {
+  PRETA
+  VERMELHA
+}
+
+enum DutyOrigin {
+  AUTO // gerado pelo motor
+  MANUAL // definido pelo operador
+  SWAP // troca registrada
+}
+
+enum DutyKind {
+  BAIXO // serviço na escala de baixo (zera folga do tipo do dia)
+  CIMA // bloqueio da escala de cima (não zera folga)
+}
+
+enum CompetitionMode {
+  AMBAS
+  SOMENTE_PRETA
+  SOMENTE_VERMELHA
+  NENHUMA
+}
+
+enum RestrictionAppLiesTo {
+  AMBAS
+  PRETA
+  VERMELHA
+}
+
+enum RestrictionType {
+  AFASTAMENTO
+  FERIAS_PREJ
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String?
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(OPERADOR)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  auditLogs AuditLog[]
+
+  upperAssignmentsCreated UpperAssignment[] // ✅ ADD
+  dutyEventsCreated       DutyEvent[] // ✅ ADD
+
+  scaleFunctionRequirementsCreated ScaleFunctionRequirement[] @relation("ScaleFunctionRequirementCreatedBy")
+  scaleFunctionOptOutsCreated      ScaleFunctionOptOut[]      @relation("ScaleFunctionOptOutCreatedBy")
+}
+
+model Militar {
+  id          String   @id @default(cuid())
+  nome        String
+  postoGrad   String?
+  antiguidade Int
+  ativo       Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  folgaInicialPreta    Int @default(0)
+  folgaInicialVermelha Int @default(0)
+
+  scaleMembers     ScaleMember[]
+  restrictions     Restriction[]
+  dutiesAsTitular  DutyEvent[]   @relation("DutyTitular")
+  dutiesAsExecutor DutyEvent[]   @relation("DutyExecutor")
+
+  upperAssignments UpperAssignment[] // ✅ ADD
+  functionOptOuts  ScaleFunctionOptOut[]
+}
+
+model Scale {
+  id        String   @id @default(cuid())
+  nome      String
+  descricao String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members      ScaleMember[]
+  duties       DutyEvent[]
+  restrictions Restriction[]
+
+  // ✅ ADD (novo)
+  functions ScaleFunction[] // 1 Scale -> N funções
+}
+
+model ScaleMember {
+  id              String          @id @default(cuid())
+  scaleId         String
+  militarId       String
+  competitionMode CompetitionMode @default(AMBAS) // concorre em preta/vermelha/ambas
+  isActive        Boolean         @default(true)
+
+  scale   Scale   @relation(fields: [scaleId], references: [id])
+  militar Militar @relation(fields: [militarId], references: [id])
+
+  @@unique([scaleId, militarId])
+  @@index([scaleId])
+  @@index([militarId])
+}
+
+model Restriction {
+  id         String    @id @default(cuid())
+  militarId  String
+  scaleId    String? // se null => restrição global (fora de TODAS)
+  startDate  DateTime?
+  endDate    DateTime?
+  indefinite Boolean   @default(false)
+  reason     String?
+
+  appliesTo RestrictionAppLiesTo @default(AMBAS)
+  type      RestrictionType      @default(AFASTAMENTO) // ✅ NOVO
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  militar Militar @relation(fields: [militarId], references: [id])
+  scale   Scale?  @relation(fields: [scaleId], references: [id])
+
+  @@index([militarId])
+  @@index([scaleId])
+}
+
+model CalendarDay {
+  date      DateTime @id // meia-noite (normalizado)
+  dayType   DayType
+  label     String? // "Feriado Quartel", etc.
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+}
+
+model UpperFunction {
+  id        String   @id @default(cuid())
+  nome      String // "Oficial de Dia (Cima)", "Plantão", etc.
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments UpperAssignment[]
+}
+
+model UpperAssignment {
+  id              String   @id @default(cuid())
+  date            DateTime
+  upperFunctionId String
+  militarId       String
+  createdById     String?
+  createdAt       DateTime @default(now())
+
+  upperFunction UpperFunction @relation(fields: [upperFunctionId], references: [id])
+  militar       Militar       @relation(fields: [militarId], references: [id])
+
+  createdBy User? @relation(fields: [createdById], references: [id]) // ok agora pq User tem o array
+
+  @@unique([date, upperFunctionId])
+  @@index([date])
+  @@index([militarId])
+}
+
+model DutyEvent {
+  id          String     @id @default(cuid())
+  date        DateTime
+  scaleId     String? // null se for escala de cima (bloqueio vindo do upper)
+  kind        DutyKind
+  origin      DutyOrigin
+  dayType     DayType
+  titularId   String?
+  executorId  String
+  note        String?
+  createdById String?
+  createdAt   DateTime   @default(now())
+
+  // ✅ NOVO (multi-vagas por função)
+  scaleFunctionId String?
+  slot            Int?
+
+  scale     Scale?   @relation(fields: [scaleId], references: [id])
+  titular   Militar? @relation("DutyTitular", fields: [titularId], references: [id])
+  executor  Militar  @relation("DutyExecutor", fields: [executorId], references: [id])
+  createdBy User?    @relation(fields: [createdById], references: [id])
+
+  // ✅ relação com função
+  scaleFunction ScaleFunction? @relation(fields: [scaleFunctionId], references: [id])
+
+  // ✅ garante que um slot específico só tenha 1 militar por dia (por função)
+  // (só vale para BAIXO multi-função, mas funciona geral)
+  @@unique([date, scaleId, kind, scaleFunctionId, slot])
+  @@index([scaleFunctionId, date])
+  @@index([date])
+  @@index([scaleId, date])
+  @@index([executorId, date])
+  @@unique([date, scaleId, kind, executorId])
+  // ✅ útil para listar "tudo do dia" daquela escala
+  @@index([scaleId, date, kind])
+}
+
+model EngineConfig {
+  id                String   @id @default(cuid())
+  minRestDays       Int      @default(2) // padrão 48h
+  allowOneDayRest   Boolean  @default(true) // exceção 24h
+  recalcHorizonDays Int      @default(120) // quantos dias pra frente recalcular
+  updatedAt         DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  metaJson  String?  @db.LongText   // ✅ aqui
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+}
+
+model ScaleFunction {
+  id        String   @id @default(cuid())
+  scaleId   String
+  nome      String // "Guarda Quartel", "Guarda Paiol", "Permanência", etc.
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  scale Scale @relation(fields: [scaleId], references: [id])
+
+  // quantidades variáveis por dia (se usar o modelo de requisitos por dia)
+  requirements ScaleFunctionRequirement[]
+
+  // bloqueios/opt-out por militar
+  optOuts ScaleFunctionOptOut[]
+
+  // escalas (duty) associadas a esta função
+  duties DutyEvent[]
+
+  @@unique([scaleId, nome]) // evita funções duplicadas na mesma escala
+  @@index([scaleId])
+}
+
+model ScaleFunctionRequirement {
+  id              String   @id @default(cuid())
+  scaleFunctionId String
+  date            DateTime // normalizado meia-noite
+  qty             Int      @default(1) // quantos militares nessa função nesse dia
+  createdById     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  scaleFunction ScaleFunction @relation(fields: [scaleFunctionId], references: [id])
+  createdBy     User?         @relation("ScaleFunctionRequirementCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([scaleFunctionId, date]) // uma configuração por função por dia
+  @@index([date])
+  @@index([scaleFunctionId, date])
+}
+
+model ScaleFunctionOptOut {
+  id              String   @id @default(cuid())
+  scaleFunctionId String
+  militarId       String
+  reason          String?
+  createdById     String?
+  createdAt       DateTime @default(now())
+
+  scaleFunction ScaleFunction @relation(fields: [scaleFunctionId], references: [id])
+  militar       Militar       @relation(fields: [militarId], references: [id])
+  createdBy     User?         @relation("ScaleFunctionOptOutCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([scaleFunctionId, militarId])
+  @@index([militarId])
+}
