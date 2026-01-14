@@ -1,2 +1,0 @@
--- AlterTable
-ALTER TABLE `restriction` ADD COLUMN `appliesTo` ENUM('AMBAS', 'PRETA', 'VERMELHA') NOT NULL DEFAULT 'AMBAS';

@@ -21,6 +21,8 @@ CREATE TABLE `Militar` (
     `ativo` BOOLEAN NOT NULL DEFAULT true,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
+    `folgaInicialPreta` INTEGER NOT NULL DEFAULT 0,
+    `folgaInicialVermelha` INTEGER NOT NULL DEFAULT 0,
 
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -60,6 +62,8 @@ CREATE TABLE `Restriction` (
     `endDate` DATETIME(3) NULL,
     `indefinite` BOOLEAN NOT NULL DEFAULT false,
     `reason` VARCHAR(191) NULL,
+    `appliesTo` ENUM('AMBAS', 'PRETA', 'VERMELHA') NOT NULL DEFAULT 'AMBAS',
+    `type` ENUM('AFASTAMENTO', 'FERIAS_PREJ') NOT NULL DEFAULT 'AFASTAMENTO',
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
@@ -118,10 +122,16 @@ CREATE TABLE `DutyEvent` (
     `note` VARCHAR(191) NULL,
     `createdById` VARCHAR(191) NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `scaleFunctionId` VARCHAR(191) NULL,
+    `slot` INTEGER NULL,
 
+    INDEX `DutyEvent_scaleFunctionId_date_idx`(`scaleFunctionId`, `date`),
     INDEX `DutyEvent_date_idx`(`date`),
     INDEX `DutyEvent_scaleId_date_idx`(`scaleId`, `date`),
     INDEX `DutyEvent_executorId_date_idx`(`executorId`, `date`),
+    INDEX `DutyEvent_scaleId_date_kind_idx`(`scaleId`, `date`, `kind`),
+    UNIQUE INDEX `DutyEvent_date_scaleId_kind_scaleFunctionId_slot_key`(`date`, `scaleId`, `kind`, `scaleFunctionId`, `slot`),
+    UNIQUE INDEX `DutyEvent_date_scaleId_kind_executorId_key`(`date`, `scaleId`, `kind`, `executorId`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -143,10 +153,54 @@ CREATE TABLE `AuditLog` (
     `action` VARCHAR(191) NOT NULL,
     `entity` VARCHAR(191) NOT NULL,
     `entityId` VARCHAR(191) NULL,
-    `metaJson` VARCHAR(191) NULL,
+    `metaJson` LONGTEXT NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
     INDEX `AuditLog_createdAt_idx`(`createdAt`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `ScaleFunction` (
+    `id` VARCHAR(191) NOT NULL,
+    `scaleId` VARCHAR(191) NOT NULL,
+    `nome` VARCHAR(191) NOT NULL,
+    `isActive` BOOLEAN NOT NULL DEFAULT true,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    INDEX `ScaleFunction_scaleId_idx`(`scaleId`),
+    UNIQUE INDEX `ScaleFunction_scaleId_nome_key`(`scaleId`, `nome`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `ScaleFunctionRequirement` (
+    `id` VARCHAR(191) NOT NULL,
+    `scaleFunctionId` VARCHAR(191) NOT NULL,
+    `date` DATETIME(3) NOT NULL,
+    `qty` INTEGER NOT NULL DEFAULT 1,
+    `createdById` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    INDEX `ScaleFunctionRequirement_date_idx`(`date`),
+    INDEX `ScaleFunctionRequirement_scaleFunctionId_date_idx`(`scaleFunctionId`, `date`),
+    UNIQUE INDEX `ScaleFunctionRequirement_scaleFunctionId_date_key`(`scaleFunctionId`, `date`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `ScaleFunctionOptOut` (
+    `id` VARCHAR(191) NOT NULL,
+    `scaleFunctionId` VARCHAR(191) NOT NULL,
+    `militarId` VARCHAR(191) NOT NULL,
+    `reason` VARCHAR(191) NULL,
+    `createdById` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    INDEX `ScaleFunctionOptOut_militarId_idx`(`militarId`),
+    UNIQUE INDEX `ScaleFunctionOptOut_scaleFunctionId_militarId_key`(`scaleFunctionId`, `militarId`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -184,4 +238,25 @@ ALTER TABLE `DutyEvent` ADD CONSTRAINT `DutyEvent_executorId_fkey` FOREIGN KEY (
 ALTER TABLE `DutyEvent` ADD CONSTRAINT `DutyEvent_createdById_fkey` FOREIGN KEY (`createdById`) REFERENCES `User`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE `DutyEvent` ADD CONSTRAINT `DutyEvent_scaleFunctionId_fkey` FOREIGN KEY (`scaleFunctionId`) REFERENCES `ScaleFunction`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE `AuditLog` ADD CONSTRAINT `AuditLog_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `ScaleFunction` ADD CONSTRAINT `ScaleFunction_scaleId_fkey` FOREIGN KEY (`scaleId`) REFERENCES `Scale`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `ScaleFunctionRequirement` ADD CONSTRAINT `ScaleFunctionRequirement_scaleFunctionId_fkey` FOREIGN KEY (`scaleFunctionId`) REFERENCES `ScaleFunction`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `ScaleFunctionRequirement` ADD CONSTRAINT `ScaleFunctionRequirement_createdById_fkey` FOREIGN KEY (`createdById`) REFERENCES `User`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `ScaleFunctionOptOut` ADD CONSTRAINT `ScaleFunctionOptOut_scaleFunctionId_fkey` FOREIGN KEY (`scaleFunctionId`) REFERENCES `ScaleFunction`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `ScaleFunctionOptOut` ADD CONSTRAINT `ScaleFunctionOptOut_militarId_fkey` FOREIGN KEY (`militarId`) REFERENCES `Militar`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `ScaleFunctionOptOut` ADD CONSTRAINT `ScaleFunctionOptOut_createdById_fkey` FOREIGN KEY (`createdById`) REFERENCES `User`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
