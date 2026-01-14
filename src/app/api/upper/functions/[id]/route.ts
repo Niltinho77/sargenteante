@@ -1,9 +1,12 @@
 // src/app/api/upper/functions/[id]/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export async function DELETE(_: Request, { params }: { params: { id: string } }) {
-  const id = params.id;
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
 
   const updated = await prisma.upperFunction.update({
     where: { id },
@@ -21,4 +24,3 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
 
   return NextResponse.json({ ok: true, id: updated.id });
 }
-

@@ -1,5 +1,5 @@
 // src/app/api/calendar/[date]/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 function normalizeDate(d: Date) {
@@ -8,14 +8,26 @@ function normalizeDate(d: Date) {
   return x;
 }
 
-export async function PATCH(req: Request, { params }: { params: { date: string } }) {
-  const day = normalizeDate(new Date(params.date));
-  if (Number.isNaN(day.getTime())) return NextResponse.json({ error: "Invalid date param" }, { status: 400 });
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ date: string }> }
+) {
+  const { date } = await params;
+
+  const day = normalizeDate(new Date(date));
+  if (Number.isNaN(day.getTime())) {
+    return NextResponse.json({ error: "Invalid date param" }, { status: 400 });
+  }
 
   const body = await req.json().catch(() => ({} as any));
-  const { dayType, label } = body as { dayType?: "PRETA" | "VERMELHA"; label?: string | null };
+  const { dayType, label } = body as {
+    dayType?: "PRETA" | "VERMELHA";
+    label?: string | null;
+  };
 
-  if (!dayType) return NextResponse.json({ error: "dayType is required" }, { status: 400 });
+  if (!dayType) {
+    return NextResponse.json({ error: "dayType is required" }, { status: 400 });
+  }
 
   const updated = await prisma.calendarDay.upsert({
     where: { date: day },
@@ -28,7 +40,11 @@ export async function PATCH(req: Request, { params }: { params: { date: string }
       action: "CALENDAR_UPDATE",
       entity: "CalendarDay",
       entityId: updated.date.toISOString().slice(0, 10),
-      metaJson: JSON.stringify({ date: updated.date.toISOString().slice(0, 10), dayType, label: label ?? null }),
+      metaJson: JSON.stringify({
+        date: updated.date.toISOString().slice(0, 10),
+        dayType,
+        label: label ?? null,
+      }),
     },
   });
 
