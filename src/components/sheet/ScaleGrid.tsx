@@ -816,8 +816,10 @@ async function doExport() {
                   <th
                     key={dateISO}
                     className={`px-2 py-2 text-center ${
-                      d.dayType === "VERMELHA" ? "bg-red-50 dark:bg-red-900" : "bg-muted"
-                    }`}
+                    d.dayType === "VERMELHA"
+                      ? "bg-red-950/70 text-red-100"
+                      : "bg-muted"
+                  }`}
                   >
                     <div className="text-[11px] opacity-70">{(dateISO)}</div>
                     <div className="text-sm font-semibold">{new Date(`${dateISO}T00:00:00`).getDate()}</div>
@@ -876,7 +878,7 @@ async function doExport() {
                     : duty?.kind === "CIMA"
                     ? "bg-amber-200 dark:bg-amber-800"
                     : d.dayType === "VERMELHA"
-                    ? "bg-red-950/35"
+                    ? "bg-red-950/55"
                     : "bg-transparent";
 
                 // ✅ se for titular do swap (sem duty), pinta também
