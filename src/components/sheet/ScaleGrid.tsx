@@ -876,7 +876,7 @@ async function doExport() {
                     : duty?.kind === "CIMA"
                     ? "bg-amber-200 dark:bg-amber-800"
                     : d.dayType === "VERMELHA"
-                    ? "bg-red-50 dark:bg-red-900/50"
+                    ? "bg-red-950/35"
                     : "bg-transparent";
 
                 // ✅ se for titular do swap (sem duty), pinta também
