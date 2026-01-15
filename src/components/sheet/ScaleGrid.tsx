@@ -893,7 +893,9 @@ async function doExport() {
                   <td style={
                         fnColors && duty?.kind === "BAIXO" && duty?.origin !== "SWAP"
                           ? {
-                              background: fnColors.bg,
+                              // ✅ se o dia é VERMELHA, mantém o vermelho do dia como base
+                              // e usa a cor da função só como "highlight" (borda + leve glow)
+                              background: d.dayType === "VERMELHA" ? undefined : fnColors.bg,
                               boxShadow: `inset 0 0 0 2px ${fnColors.border}`,
                               color: fnColors.text,
                             }
