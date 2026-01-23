@@ -11,9 +11,8 @@ type Body = {
   qty?: number | string; // >= 0
   createdById?: string | null;
 
-  // ✅ NOVO
-  applyDays?: number;
-  to?: string; // YYYY-MM-DD
+  // ✅ novo: aplica o mesmo qty para [date .. date+applyDays-1]
+  applyDays?: number | string;
 };
 
 function noStoreJson(payload: any, status = 200) {
@@ -37,23 +36,11 @@ function addDaysLocal(d: Date, n: number) {
   return normalizeLocal(x);
 }
 
-function parseDayStr(s: unknown) {
-  if (typeof s !== "string" || !s.trim()) return null;
-  const d = normalizeLocal(parseISODateLocal(s.trim()));
-  if (Number.isNaN(d.getTime())) return null;
-  return d;
-}
-
-function parseQty(raw: unknown) {
-  const qtyNum =
-    typeof raw === "number"
-      ? raw
-      : typeof raw === "string"
-      ? Number.parseInt(raw, 10)
-      : NaN;
-
-  const qty = Number.isFinite(qtyNum) ? Math.floor(qtyNum) : NaN;
-  return qty;
+function parseNonNegInt(v: any, fallback: number) {
+  const n =
+    typeof v === "number" ? v : typeof v === "string" ? Number.parseInt(v, 10) : NaN;
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.floor(n));
 }
 
 export async function POST(
@@ -66,13 +53,14 @@ export async function POST(
 
   if (!body.date) return json(400, { error: "date is required (YYYY-MM-DD)" });
 
-  const day = parseDayStr(body.date);
-  if (!day) return json(400, { error: "Invalid date" });
+  const startDay = normalizeLocal(parseISODateLocal(body.date));
+  if (Number.isNaN(startDay.getTime())) return json(400, { error: "Invalid date" });
 
-  const qty = parseQty((body as any).qty);
-  if (!Number.isFinite(qty) || qty < 0) {
-    return json(400, { error: "qty must be an integer >= 0" });
-  }
+  const qty = parseNonNegInt(body.qty, NaN as any);
+  if (!Number.isFinite(qty) || qty < 0) return json(400, { error: "qty must be a number >= 0" });
+
+  const applyDaysRaw = parseNonNegInt(body.applyDays, 1);
+  const applyDays = Math.min(Math.max(applyDaysRaw, 1), 365); // limite seguro
 
   const fn = await prisma.scaleFunction.findFirst({
     where: { id: functionId, scaleId },
@@ -80,88 +68,57 @@ export async function POST(
   });
   if (!fn) return json(404, { error: "ScaleFunction not found for this scale" });
 
-  // ✅ range inclusivo
-  let toDay = day;
+  const saved = await prisma.$transaction(async (tx) => {
+    const days: string[] = [];
+    let lastUpsert: any = null;
 
-  const toParsed = parseDayStr(body.to);
-  if (toParsed) {
-    toDay = toParsed;
-  } else if (typeof body.applyDays === "number" && Number.isFinite(body.applyDays)) {
-    const n = Math.max(1, Math.floor(body.applyDays));
-    toDay = addDaysLocal(day, n - 1);
-  }
+    for (let i = 0; i < applyDays; i++) {
+      const day = addDaysLocal(startDay, i);
 
-  if (toDay < day) toDay = day;
+      // se qty=0, nós DELETAMOS o requirement daquele dia (limpa)
+      if (qty === 0) {
+        await tx.scaleFunctionRequirement.deleteMany({
+          where: { scaleFunctionId: functionId, date: day },
+        });
+        days.push(isoDay(day));
+        continue;
+      }
 
-  const days: Date[] = [];
-  for (let d = day; d <= toDay; d = addDaysLocal(d, 1)) days.push(d);
+      lastUpsert = await tx.scaleFunctionRequirement.upsert({
+        where: { scaleFunctionId_date: { scaleFunctionId: functionId, date: day } },
+        update: { qty, createdById: body.createdById ?? null },
+        create: {
+          scaleFunctionId: functionId,
+          date: day,
+          qty,
+          createdById: body.createdById ?? null,
+        },
+      });
 
-  const savedRows = await prisma.$transaction(async (tx) => {
-    const rows = await Promise.all(
-      days.map((dt) =>
-        tx.scaleFunctionRequirement.upsert({
-          where: { scaleFunctionId_date: { scaleFunctionId: functionId, date: dt } },
-          update: { qty, createdById: body.createdById ?? null },
-          create: {
-            scaleFunctionId: functionId,
-            date: dt,
-            qty,
-            createdById: body.createdById ?? null,
-          },
-          select: {
-            id: true,
-            scaleFunctionId: true,
-            date: true,
-            qty: true,
-            createdById: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-        })
-      )
-    );
+      days.push(isoDay(day));
+    }
 
     await tx.auditLog.create({
       data: {
-        action:
-          rows.length > 1
-            ? "SCALE_FUNCTION_REQUIREMENT_UPSERT_RANGE"
-            : "SCALE_FUNCTION_REQUIREMENT_UPSERT",
+        action: "SCALE_FUNCTION_REQUIREMENT_UPSERT_RANGE",
         entity: "ScaleFunctionRequirement",
-        entityId: rows[0]?.id ?? null,
+        entityId: lastUpsert?.id ?? null,
         userId: body.createdById ?? null,
         metaJson: JSON.stringify({
           scaleId,
           scaleFunctionId: functionId,
           functionNome: fn.nome,
-          from: isoDay(day),
-          to: isoDay(toDay),
+          from: isoDay(startDay),
+          applyDays,
           qty,
-          count: rows.length,
         }),
       },
     });
 
-    return rows;
+    return { ok: true, functionId, from: isoDay(startDay), applyDays, qty, days };
   });
 
-  return noStoreJson({
-    ok: true,
-    requirement: {
-      id: savedRows[0].id,
-      scaleFunctionId: savedRows[0].scaleFunctionId,
-      date: isoDay(savedRows[0].date),
-      qty: savedRows[0].qty,
-      createdById: savedRows[0].createdById,
-      createdAt: savedRows[0].createdAt,
-      updatedAt: savedRows[0].updatedAt,
-    },
-    range: {
-      from: isoDay(day),
-      to: isoDay(toDay),
-      updatedDays: savedRows.length,
-    },
-  });
+  return noStoreJson(saved);
 }
 
 export async function DELETE(
@@ -176,12 +133,12 @@ export async function DELETE(
 
   if (!dateStr) return json(400, { error: "date query param is required (YYYY-MM-DD)" });
 
-  const day = parseDayStr(dateStr);
-  if (!day) return json(400, { error: "Invalid date" });
+  const day = normalizeLocal(parseISODateLocal(dateStr));
+  if (Number.isNaN(day.getTime())) return json(400, { error: "Invalid date" });
 
   const fn = await prisma.scaleFunction.findFirst({
     where: { id: functionId, scaleId },
-    select: { id: true },
+    select: { id: true, nome: true },
   });
   if (!fn) return json(404, { error: "ScaleFunction not found for this scale" });
 
@@ -204,6 +161,7 @@ export async function DELETE(
         metaJson: JSON.stringify({
           scaleId,
           scaleFunctionId: functionId,
+          functionNome: fn.nome,
           date: isoDay(day),
         }),
       },

@@ -206,12 +206,23 @@ export default function FunctionsPanel(props: { scaleId: string; createdById?: s
           
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-        
-          <button className="btn text-sm" onClick={() => setModalOpen(true)} disabled={loading}>
-            Qtd Função
-          </button>
-        </div>
+        // dentro do return do FunctionsPanel, no Header onde ficam os botões
+<div className="flex flex-wrap items-center gap-2">
+  <div className="flex items-center gap-2">
+    <label className="text-xs text-muted">Dia</label>
+    <input
+      type="date"
+      className="input h-9 text-xs"
+      value={modalDate}
+      onChange={(e) => setModalDate(e.target.value)}
+      disabled={loading}
+    />
+  </div>
+
+  <button className="btn text-sm" onClick={() => setModalOpen(true)} disabled={loading}>
+    Qtd Função
+  </button>
+</div>
       </div>
 
       {/* Error */}

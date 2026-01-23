@@ -72,6 +72,14 @@ export default function FunctionRequirementModal(props: {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [rows, setRows] = useState<Array<{ scaleFunctionId: string; qty: string }>>([]);
+  const [applyDays, setApplyDays] = useState<string>("120");
+const [applyForward, setApplyForward] = useState(true);
+
+function normalizeApplyDays(raw: string) {
+  const n = Math.floor(Number((raw ?? "").trim() || "0"));
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(n, 365); // limite de segurança
+}
 
   async function load() {
     setLoading(true);
@@ -125,11 +133,18 @@ export default function FunctionRequirementModal(props: {
   }
 
   async function upsertRequirementViaPost(fnId: string, qty: number) {
-    return json(`/api/scales/${scaleId}/functions/${fnId}/requirements`, {
-      method: "POST",
-      body: JSON.stringify({ date, qty, createdById: createdById ?? null }),
-    });
-  }
+  const days = applyForward ? normalizeApplyDays(applyDays) : 1;
+
+  return json(`/api/scales/${scaleId}/functions/${fnId}/requirements`, {
+    method: "POST",
+    body: JSON.stringify({
+      date,
+      qty,
+      createdById: createdById ?? null,
+      applyDays: days, // ✅ novo
+    }),
+  });
+}
 
   async function save() {
     setLoading(true);
@@ -196,6 +211,31 @@ export default function FunctionRequirementModal(props: {
               <div className="mt-1 text-xs text-muted">{err}</div>
             </div>
           ) : null}
+
+          <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/40 p-3">
+  <label className="flex items-center gap-2 text-xs text-foreground">
+    <input
+      type="checkbox"
+      checked={applyForward}
+      onChange={(e) => setApplyForward(e.target.checked)}
+      disabled={loading}
+    />
+    Aplicar para os próximos dias
+  </label>
+
+  <div className="flex items-center gap-2">
+    <span className="text-xs text-muted">Dias</span>
+    <input
+      className="input h-9 w-[90px] text-right text-xs tabular-nums"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      value={applyDays}
+      onChange={(e) => setApplyDays(e.target.value.replace(/[^\d]/g, ""))}
+      disabled={loading || !applyForward}
+    />
+    <span className="text-xs text-muted">(ex: 120)</span>
+  </div>
+</div>
 
           <div className="rounded-xl border border-border">
             {/* list header */}
