@@ -113,8 +113,16 @@ export async function POST(
   const day = normalizeLocal(parseISODateLocal(body.date));
   if (Number.isNaN(day.getTime())) return json(400, { error: "Invalid date" });
 
-  const qty = typeof body.qty === "number" ? Math.floor(body.qty) : NaN;
-  if (!Number.isFinite(qty) || qty < 0) return json(400, { error: "qty must be a number >= 0" });
+const raw = (body as any).qty;
+
+const qtyNum =
+  typeof raw === "number"
+    ? raw
+    : typeof raw === "string"
+    ? Number.parseInt(raw, 10)
+    : NaN;
+
+const qty = Number.isFinite(qtyNum) ? Math.floor(qtyNum) : NaN;  if (!Number.isFinite(qty) || qty < 0) return json(400, { error: "qty must be a number >= 0" });
 
   const fn = await prisma.scaleFunction.findFirst({
     where: { id: body.scaleFunctionId, scaleId },
