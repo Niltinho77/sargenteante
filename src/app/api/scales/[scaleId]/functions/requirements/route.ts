@@ -48,6 +48,25 @@ function buildRange(fromStr?: string | null, toStr?: string | null) {
   return null;
 }
 
+function parseQty(raw: unknown) {
+  const qtyNum =
+    typeof raw === "number"
+      ? raw
+      : typeof raw === "string"
+      ? Number.parseInt(raw, 10)
+      : NaN;
+
+  const qty = Number.isFinite(qtyNum) ? Math.floor(qtyNum) : NaN;
+  return qty;
+}
+
+function parseDayStr(s: unknown) {
+  if (typeof s !== "string" || !s.trim()) return null;
+  const d = normalizeLocal(parseISODateLocal(s.trim()));
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ scaleId: string }> }
@@ -103,26 +122,24 @@ export async function POST(
   const body = (await req.json().catch(() => ({}))) as {
     scaleFunctionId?: string;
     date?: string; // YYYY-MM-DD
-    qty?: number;
+    qty?: number | string;
     createdById?: string | null;
+
+    // ✅ NOVO (propagar)
+    applyDays?: number; // ex: 120
+    to?: string; // YYYY-MM-DD
   };
 
   if (!body.scaleFunctionId) return json(400, { error: "scaleFunctionId is required" });
   if (!body.date) return json(400, { error: "date is required (YYYY-MM-DD)" });
 
-  const day = normalizeLocal(parseISODateLocal(body.date));
-  if (Number.isNaN(day.getTime())) return json(400, { error: "Invalid date" });
+  const day = parseDayStr(body.date);
+  if (!day) return json(400, { error: "Invalid date" });
 
-const raw = (body as any).qty;
-
-const qtyNum =
-  typeof raw === "number"
-    ? raw
-    : typeof raw === "string"
-    ? Number.parseInt(raw, 10)
-    : NaN;
-
-const qty = Number.isFinite(qtyNum) ? Math.floor(qtyNum) : NaN;  if (!Number.isFinite(qty) || qty < 0) return json(400, { error: "qty must be a number >= 0" });
+  const qty = parseQty((body as any).qty);
+  if (!Number.isFinite(qty) || qty < 0) {
+    return json(400, { error: "qty must be an integer >= 0" });
+  }
 
   const fn = await prisma.scaleFunction.findFirst({
     where: { id: body.scaleFunctionId, scaleId },
@@ -130,45 +147,86 @@ const qty = Number.isFinite(qtyNum) ? Math.floor(qtyNum) : NaN;  if (!Number.isF
   });
   if (!fn) return json(404, { error: "ScaleFunction not found for this scale" });
 
-  const created = await prisma.scaleFunctionRequirement.upsert({
-    where: { scaleFunctionId_date: { scaleFunctionId: fn.id, date: day } },
-    update: { qty, createdById: body.createdById ?? null },
-    create: { scaleFunctionId: fn.id, date: day, qty, createdById: body.createdById ?? null },
-    select: {
-      id: true,
-      scaleFunctionId: true,
-      date: true,
-      qty: true,
-      createdById: true,
-      createdAt: true,
-      updatedAt: true,
-    },
+  // ✅ calcula range inclusivo
+  let toDay = day;
+
+  const toParsed = parseDayStr(body.to);
+  if (toParsed) {
+    toDay = toParsed;
+  } else if (typeof body.applyDays === "number" && Number.isFinite(body.applyDays)) {
+    const n = Math.max(1, Math.floor(body.applyDays));
+    toDay = addDaysLocal(day, n - 1);
+  }
+
+  // se toDay for menor que day, normaliza pra day
+  if (toDay < day) toDay = day;
+
+  // monta lista [day..toDay] inclusivo
+  const days: Date[] = [];
+  for (let d = day; d <= toDay; d = addDaysLocal(d, 1)) days.push(d);
+
+  const saved = await prisma.$transaction(async (tx) => {
+    const rows = await Promise.all(
+      days.map((dt) =>
+        tx.scaleFunctionRequirement.upsert({
+          where: { scaleFunctionId_date: { scaleFunctionId: fn.id, date: dt } },
+          update: { qty, createdById: body.createdById ?? null },
+          create: { scaleFunctionId: fn.id, date: dt, qty, createdById: body.createdById ?? null },
+          select: {
+            id: true,
+            scaleFunctionId: true,
+            date: true,
+            qty: true,
+            createdById: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        })
+      )
+    );
+
+    await tx.auditLog.create({
+      data: {
+        action:
+          rows.length > 1
+            ? "SCALE_FUNCTION_REQUIREMENT_UPSERT_RANGE"
+            : "SCALE_FUNCTION_REQUIREMENT_UPSERT",
+        entity: "ScaleFunctionRequirement",
+        entityId: rows[0]?.id ?? null,
+        userId: body.createdById ?? null,
+        metaJson: JSON.stringify({
+          scaleId,
+          scaleFunctionId: fn.id,
+          functionNome: fn.nome,
+          from: isoDay(day),
+          to: isoDay(toDay),
+          qty,
+          count: rows.length,
+        }),
+      },
+    });
+
+    return rows;
   });
 
-  // audit (pequeno -> sem risco de metaJson gigante)
-  await prisma.auditLog.create({
-    data: {
-      action: "SCALE_FUNCTION_REQUIREMENT_UPSERT",
-      entity: "ScaleFunctionRequirement",
-      entityId: created.id,
-      userId: body.createdById ?? null,
-      metaJson: JSON.stringify({
-        scaleId,
-        scaleFunctionId: fn.id,
-        functionNome: fn.nome,
-        date: isoDay(created.date),
-        qty: created.qty,
-      }),
-    },
-  });
+  // ✅ compatível com teu front: devolve o registro do dia (primeiro),
+  // e também info do range (pra você usar depois se quiser)
+  const first = saved[0];
 
   return noStoreJson({
-    id: created.id,
-    scaleFunctionId: created.scaleFunctionId,
-    date: isoDay(created.date),
-    qty: created.qty,
-    createdById: created.createdById,
-    createdAt: created.createdAt,
-    updatedAt: created.updatedAt,
+    id: first.id,
+    scaleFunctionId: first.scaleFunctionId,
+    date: isoDay(first.date),
+    qty: first.qty,
+    createdById: first.createdById,
+    createdAt: first.createdAt,
+    updatedAt: first.updatedAt,
+
+    // extra (não quebra)
+    range: {
+      from: isoDay(day),
+      to: isoDay(toDay),
+      updatedDays: saved.length,
+    },
   });
 }
