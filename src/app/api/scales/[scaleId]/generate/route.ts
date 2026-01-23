@@ -418,24 +418,36 @@ export async function POST(
         }
 
         // se mesmo assim continuou 0, aí sim é erro real
-        if (neededTarget <= 0) {
-          return {
-            ok: false as const,
-            code: "NO_REQUIREMENTS_FOR_DAY",
-            upperSaved: true,
-            generated: false,
-            error:
-              "Escala de cima salva, mas NÃO há vagas por função (requirements) cadastradas para este dia. Cadastre qty > 0 em Configurar → Vagas por função.",
-            meta: {
-              day: targetISO,
-              scaleId,
-              mode,
-              horizonDays,
-              activeFunctions: activeFnIds.length,
-              neededTarget,
-            },
-          };
-        }
+        // se mesmo assim continuou 0, cria DEFAULT para o dia alvo (evita 409 após recriar funções)
+if (neededTarget <= 0) {
+  const DEFAULT_QTY = 1; // <-- se quiser, depois a gente faz isso vir do EngineConfig
+
+  await Promise.all(
+    activeFnIds.map((fnId) =>
+      tx.scaleFunctionRequirement.upsert({
+        where: { scaleFunctionId_date: { scaleFunctionId: fnId, date: day } },
+        update: { qty: DEFAULT_QTY, createdById: body.createdById ?? null },
+        create: {
+          scaleFunctionId: fnId,
+          date: day,
+          qty: DEFAULT_QTY,
+          createdById: body.createdById ?? null,
+        },
+      })
+    )
+  );
+
+  neededTarget = activeFnIds.length * DEFAULT_QTY;
+  neededTotalByDayISO.set(targetISO, neededTarget);
+
+  console.log("🧩 REQUIREMENTS AUTO-SEED", {
+    day: targetISO,
+    scaleId,
+    defaultQty: DEFAULT_QTY,
+    functions: activeFnIds.length,
+    neededTarget,
+  });
+}
       }
 
 
