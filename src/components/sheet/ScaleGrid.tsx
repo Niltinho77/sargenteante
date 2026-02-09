@@ -518,8 +518,8 @@ const functionLegend = useMemo(() => {
 
   const ok = window.confirm(
     `Alterar o dia ${dateISO} de ${current} para ${next}?\n\n` +
-    `✔ Não apaga escala existente\n` +
-    `✔ Afeta folgas, restrições e próximas gerações`
+    `✔ Use com responsabilidade CB LUAN` 
+    
   );
 
   if (!ok) return;
