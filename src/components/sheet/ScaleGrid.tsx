@@ -145,6 +145,8 @@ async function postJson<T>(
   return { status: r.status, ok: r.ok, data };
 }
 
+
+
 function weekdayShort(dateISO: string) {
   const d = new Date(`${dateISO}T00:00:00`);
   return d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
@@ -510,6 +512,35 @@ const functionLegend = useMemo(() => {
       setClearingDay(false);
     }
   }
+
+  async function toggleDayType(dateISO: string, current: "PRETA" | "VERMELHA") {
+  const next = current === "PRETA" ? "VERMELHA" : "PRETA";
+
+  const ok = window.confirm(
+    `Alterar o dia ${dateISO} de ${current} para ${next}?\n\n` +
+    `✔ Não apaga escala existente\n` +
+    `✔ Afeta folgas, restrições e próximas gerações`
+  );
+
+  if (!ok) return;
+
+  try {
+    const res = await fetch(`/api/calendar/${dateISO}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dayType: next }),
+    });
+
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(j?.error || `HTTP ${res.status}`);
+    }
+
+    await load(); // 🔁 recarrega planilha inteira
+  } catch (e: any) {
+    alert(e?.message ?? "Erro ao alterar tipo do dia");
+  }
+}
   
 
 
@@ -813,17 +844,21 @@ async function doExport() {
                 
 
                 return (
-                  <th
-                    key={dateISO}
-                    className={`px-2 py-2 text-center ${
+                 <th
+                  key={dateISO}
+                  onClick={() => toggleDayType(dateISO, d.dayType)}
+                  className={`px-2 py-2 text-center cursor-pointer select-none transition ${
                     d.dayType === "VERMELHA"
-                      ? "bg-red-950/70 text-red-100"
-                      : "bg-muted"
+                      ? "bg-red-950/70 text-red-100 hover:bg-red-900"
+                      : "bg-muted hover:bg-muted/70"
                   }`}
-                  >
-                    <div className="text-[11px] opacity-70">{(dateISO)}</div>
-                    <div className="text-sm font-semibold">{new Date(`${dateISO}T00:00:00`).getDate()}</div>
-                  </th>
+                  title="Clique para alternar PRETA / VERMELHA"
+                >
+                  <div className="text-[11px] opacity-70">{dateISO}</div>
+                  <div className="text-sm font-semibold">
+                    {new Date(`${dateISO}T00:00:00`).getDate()}
+                  </div>
+                </th>
                 );
               })}
             </tr>
