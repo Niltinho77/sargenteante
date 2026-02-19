@@ -240,6 +240,125 @@ export default function ScaleGrid({ scaleId }: { scaleId: string }) {
 
   const membersLite = useMemo(() => data?.members.map((x) => x.militar) ?? [], [data]);
 
+  type FnLite = { id: string; nome: string; isActive: boolean };
+type ReqRow = { scaleFunctionId: string; date: string; qty: number };
+
+const [manualMode, setManualMode] = useState(false);
+const [manualOpen, setManualOpen] = useState(false);
+const [manualDate, setManualDate] = useState<string>(today);
+const [manualMilitarId, setManualMilitarId] = useState<string>("");
+const [manualFns, setManualFns] = useState<FnLite[]>([]);
+const [manualQtyByFn, setManualQtyByFn] = useState<Map<string, number>>(new Map());
+const [manualFnId, setManualFnId] = useState<string>("");
+const [manualSlot, setManualSlot] = useState<string>("1");
+const [manualErr, setManualErr] = useState<string | null>(null);
+const [manualSaving, setManualSaving] = useState(false);
+
+async function openManualPicker(dateISO: string, militarId: string) {
+  try {
+    setManualErr(null);
+    setManualDate(dateISO);
+    setManualMilitarId(militarId);
+
+    const bust = Date.now();
+
+    const [fns, reqs] = await Promise.all([
+      getJson<FnLite[]>(`/api/scales/${scaleId}/functions?_=${bust}`),
+      getJson<ReqRow[]>(
+        `/api/scales/${scaleId}/functions/requirements?from=${dateISO}&to=${dateISO}&_=${bust}`
+      ),
+    ]);
+
+    const active = (fns ?? []).filter((x) => x.isActive);
+    const qtyMap = new Map<string, number>();
+    for (const r of reqs ?? []) {
+      if (r.date === dateISO) qtyMap.set(r.scaleFunctionId, Math.max(0, Math.floor(r.qty)));
+    }
+
+    setManualFns(active);
+    setManualQtyByFn(qtyMap);
+
+    // default: primeira função com qty>0
+    const first = active.find((x) => (qtyMap.get(x.id) ?? 0) > 0) ?? active[0];
+    setManualFnId(first?.id ?? "");
+    setManualSlot("1");
+
+    setManualOpen(true);
+  } catch (e: any) {
+    setManualErr(e?.message ?? "Erro ao abrir escala manual");
+    setManualOpen(true);
+  }
+}
+
+function occupiedSlotsFor(dateISO: string, fnId: string, ignoreMilitarId?: string) {
+  const slots = new Set<number>();
+  for (const ev of data?.duties ?? []) {
+    if (ev.kind !== "BAIXO") continue;
+    if (String(ev.date).slice(0, 10) !== dateISO) continue;
+    if (ev.scaleFunctionId !== fnId) continue;
+    if (ignoreMilitarId && ev.executorId === ignoreMilitarId) continue;
+    if (typeof ev.slot === "number") slots.add(ev.slot);
+  }
+  return slots;
+}
+
+async function saveManual() {
+  if (!manualFnId || !manualMilitarId || !manualDate) return;
+
+  try {
+    setManualSaving(true);
+    setManualErr(null);
+
+    const slotNum = Math.max(1, Math.floor(Number(manualSlot || "1")));
+    const res = await postJson(`/api/scales/${scaleId}/manual`, {
+      date: manualDate,
+      militarId: manualMilitarId,
+      scaleFunctionId: manualFnId,
+      slot: slotNum,
+      createdById: null,
+    });
+
+    if (!res.ok) {
+      throw new Error(res.data?.error || `HTTP ${res.status}`);
+    }
+
+    await load();
+    setManualOpen(false);
+  } catch (e: any) {
+    setManualErr(e?.message ?? "Erro ao salvar manual");
+  } finally {
+    setManualSaving(false);
+  }
+}
+
+async function deleteManualForCell() {
+  if (!manualMilitarId || !manualDate) return;
+
+  try {
+    setManualSaving(true);
+    setManualErr(null);
+
+    const qs = new URLSearchParams();
+    qs.set("date", manualDate);
+    qs.set("militarId", manualMilitarId);
+
+    const r = await fetch(`/api/scales/${scaleId}/manual?${qs.toString()}`, {
+      method: "DELETE",
+      cache: "no-store",
+    });
+
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error((j as any)?.error || `HTTP ${r.status}`);
+
+    await load();
+    setManualOpen(false);
+  } catch (e: any) {
+    setManualErr(e?.message ?? "Erro ao remover");
+  } finally {
+    setManualSaving(false);
+  }
+}
+
   const militarsInThisScale = useMemo(() => {
   const list = membersLite.slice();
   list.sort((a, b) => {
@@ -786,10 +905,11 @@ async function doExport() {
 
         <div className="flex gap-2">
           <button
-            onClick={load}
-            className="btn text-sm"
+            onClick={() => setManualMode((v) => !v)}
+            className={`btn text-sm ${manualMode ? "btn-primary" : ""}`}
+            title="Quando ligado, clique em uma célula para escalar manualmente"
           >
-            Atualizar
+            {manualMode ? "Modo manual: ON" : "Modo manual: OFF"}
           </button>
 
           <button
@@ -884,7 +1004,7 @@ async function doExport() {
 
                 const fnTooltip =
                   duty?.kind === "BAIXO" && duty.functionNome
-                    ? `${duty.functionNome}${typeof duty.slot === "number" ? ` • Vaga ${duty.slot + 1}` : ""}`
+                  ? `${duty.functionNome}${typeof duty.slot === "number" ? ` • Vaga ${duty.slot}` : ""}`
                     : "";
 
                  if (dateISO === "2026-01-12" && m.militar.id === "cmk9qek3q000a3p0c8gs8assv") {
@@ -942,6 +1062,14 @@ async function doExport() {
                     key={dateISO}
                     className={`relative h-10 border-l text-center ${cellClass} ${cursor}`}
                     onClick={() => {
+                  
+                      // ✅ modo manual tem prioridade
+                      if (manualMode) {
+                        openManualPicker(dateISO, m.militar.id);
+                        return;
+                      }
+
+                      // ✅ comportamento antigo (swap)
                       if (!duty || duty.kind !== "BAIXO") return;
                       openSwap(duty, m.militar.id);
                     }}
