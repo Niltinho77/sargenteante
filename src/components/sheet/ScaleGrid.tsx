@@ -1043,8 +1043,8 @@ async function doExport() {
                     : baseClass;
 
                 // clique abre troca só no executor BAIXO
-                const canClickSwap = duty?.kind === "BAIXO";
-                const cursor = canClickSwap ? "cursor-pointer" : "cursor-default";
+                const canClick = manualMode || duty?.kind === "BAIXO";
+                const cursor = canClick ? "cursor-pointer" : "cursor-default";
 
                 return (
                   <td style={
@@ -1281,6 +1281,103 @@ async function doExport() {
           </div>
         </div>
       )}
+
+      {/* modal modo manual */}
+{manualOpen && (
+  <div className="fixed inset-0 z-50 modal-overlay p-4">
+    <div className="mx-auto w-full max-w-xl rounded-xl bg-card p-4 shadow-lg">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-base font-semibold">Escala manual</div>
+          <div className="text-xs text-muted">
+            Data: <span className="font-medium">{manualDate}</span>
+          </div>
+        </div>
+
+        <button className="btn text-sm" onClick={() => setManualOpen(false)} disabled={manualSaving}>
+          Fechar
+        </button>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        <div className="text-sm">
+          <span className="opacity-70">Militar:</span>{" "}
+          <span className="font-semibold">
+            {membersLite.find((x) => x.id === manualMilitarId)?.nome ?? manualMilitarId}
+          </span>
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-xs text-muted">Função</div>
+          <select
+            value={manualFnId}
+            onChange={(e) => setManualFnId(e.target.value)}
+            className="w-full rounded border px-2 py-2 text-sm bg-card"
+            disabled={manualSaving}
+          >
+            {manualFns.map((f) => {
+              const qty = manualQtyByFn.get(f.id) ?? 0;
+              return (
+                <option key={f.id} value={f.id}>
+                  {f.nome} {qty ? `(qtd ${qty})` : "(sem demanda)"}
+                </option>
+              );
+            })}
+          </select>
+          <div className="text-[11px] opacity-70">
+            Dica: se estiver “sem demanda”, o motor pode não ter vaga cadastrada para o dia.
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-xs text-muted">Vaga (slot)</div>
+          <input
+            value={manualSlot}
+            onChange={(e) => setManualSlot(e.target.value)}
+            className="w-full rounded border px-2 py-2 text-sm bg-card"
+            inputMode="numeric"
+            disabled={manualSaving}
+          />
+          {manualFnId ? (() => {
+            const occ = occupiedSlotsFor(manualDate, manualFnId, manualMilitarId);
+            const qty = manualQtyByFn.get(manualFnId) ?? 0;
+            return (
+              <div className="text-[11px] opacity-70">
+                Ocupados: {occ.size ? Array.from(occ).sort((a,b)=>a-b).join(", ") : "nenhum"} •
+                Capacidade do dia: {qty || "0"}
+              </div>
+            );
+          })() : null}
+        </div>
+
+        {manualErr ? (
+          <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+            {manualErr}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mt-4 flex items-center justify-end gap-2">
+        <button
+          className="rounded-md border px-3 py-1.5 text-sm"
+          onClick={deleteManualForCell}
+          disabled={manualSaving}
+          title="Remove qualquer escala MANUAL desse militar nesse dia"
+        >
+          Remover
+        </button>
+
+        <button
+          className="btn btn-primary text-sm font-medium disabled:opacity-50"
+          onClick={saveManual}
+          disabled={manualSaving || !manualFnId || !manualMilitarId}
+        >
+          {manualSaving ? "Salvando..." : "Salvar manual"}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
 
       {/* modal troca */}
       {swapOpen && swapDuty && (
